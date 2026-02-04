@@ -6,12 +6,11 @@ from datetime import datetime
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QComboBox,
     QPushButton, QLabel, QLineEdit, QTextEdit, QMessageBox,
-    QTabWidget, QHBoxLayout, QGridLayout
+    QTabWidget, QHBoxLayout, QGridLayout, QGroupBox
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 import paramiko
-
 
 # Настройка логгирования
 LOG_FILENAME = "olt_connector.log"
@@ -20,7 +19,6 @@ logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
-
 
 class SSHClient:
     def __init__(self, host, port=22, username="admin", password="password", timeout=10):
@@ -33,7 +31,7 @@ class SSHClient:
         self.shell = None
         self.output_area = None  # Для вывода в GUI
         self.connect()
-
+    
     def set_output_area(self, output_area):
         """Привязывает текстовое поле GUI к клиенту"""
         self.output_area = output_area
@@ -54,7 +52,7 @@ class SSHClient:
             self.client = paramiko.SSHClient()
             self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             self.client.connect(
-                hostname=self.host,
+                hostname=self.host, 
                 port=self.port,
                 username=self.username,
                 password=self.password,
@@ -64,7 +62,7 @@ class SSHClient:
             self._log("Соединение установлено")
 
             # Ждём приглашения
-            if not self._wait_for_prompt(prompt="#", timeout=10) and not self._wait_for_prompt(prompt=">", timeout=5):
+            if not self._wait_for_prompt(prompt="# ", timeout=10) and not self._wait_for_prompt(prompt="> ", timeout=5):
                 raise ConnectionError("Не удалось определить приглашение после входа по SSH")
             else:
                 self._log("Аутентификация успешна")
@@ -95,7 +93,7 @@ class SSHClient:
         self._log(f"[Прочитано {len(output)} символов]")
         return output
 
-    def _wait_for_prompt(self, prompt="#", timeout=10):
+    def _wait_for_prompt(self, prompt="# ", timeout=10):
         """Ждет появления указанного приглашения"""
         buffer = ""
         start_time = time.time()
@@ -103,7 +101,7 @@ class SSHClient:
             if self.shell.recv_ready():
                 data = self.shell.recv(9999).decode('utf-8', 'ignore')
                 buffer += data
-                if prompt in buffer or ">" in buffer:
+                if prompt in buffer or "> " in buffer:
                     self._log(f"[Найдено приглашение]:\n{buffer}")
                     return True
             time.sleep(0.2)
@@ -140,7 +138,6 @@ class SSHClient:
             self.client.close()
             self._log("Соединение закрыто")
 
-
 class OLTApp(QWidget):
     def __init__(self):
         super().__init__()
@@ -150,10 +147,10 @@ class OLTApp(QWidget):
         self.cached_config_olt = None
         self.last_ont_interface = None  # Последний найденный интерфейс ONT
         self.initUI()
-
+    
     def initUI(self):
         self.setWindowTitle('OLT Eltex Manager (SSH)')
-        self.setGeometry(300, 300, 900, 750)  # Увеличим размер окна
+        self.setGeometry(300, 300, 900, 750)
         main_layout = QVBoxLayout()
 
         # Создаем вкладки
@@ -163,26 +160,35 @@ class OLTApp(QWidget):
         self.tab_search = QWidget()
         tab_search_layout = QVBoxLayout()
         
-        # IP-выбор и подключение
-        ip_layout = QHBoxLayout()
-        ip_layout.addWidget(QLabel("Выберите OLT:"))
+        # Группа подключения
+        connection_group = QGroupBox("Подключение к OLT")
+        connection_layout = QGridLayout()
         
-        self.ip_combo = QComboBox()
-        self.ip_combo.addItems([
-            "10.10.1.105",
-            "10.10.1.108",
-            "10.10.1.109",
-            "10.10.1.110",
-            "10.10.1.111",
-            "10.10.1.112"
-        ])
-        ip_layout.addWidget(self.ip_combo)
+        connection_layout.addWidget(QLabel("IP адрес:"), 0, 0)
+        self.ip_input = QLineEdit()
+        self.ip_input.setPlaceholderText("Пример: 10.10.1.105")
+        self.ip_input.setText("10.10.1.105")  # Значение по умолчанию
+        connection_layout.addWidget(self.ip_input, 0, 1)
+        
+        connection_layout.addWidget(QLabel("Логин:"), 1, 0)
+        self.username_input = QLineEdit()
+        self.username_input.setPlaceholderText("admin")
+        self.username_input.setText("admin")  # Значение по умолчанию
+        connection_layout.addWidget(self.username_input, 1, 1)
+        
+        connection_layout.addWidget(QLabel("Пароль:"), 2, 0)
+        self.password_input = QLineEdit()
+        self.password_input.setPlaceholderText("password")
+        self.password_input.setEchoMode(QLineEdit.Password)
+        self.password_input.setText("password")  # Значение по умолчанию
+        connection_layout.addWidget(self.password_input, 2, 1)
         
         self.connect_btn = QPushButton("Подключиться")
         self.connect_btn.clicked.connect(self.connect_to_olt)
-        ip_layout.addWidget(self.connect_btn)
+        connection_layout.addWidget(self.connect_btn, 3, 0, 1, 2)
         
-        tab_search_layout.addLayout(ip_layout)
+        connection_group.setLayout(connection_layout)
+        tab_search_layout.addWidget(connection_group)
         
         self.status_label = QLabel("Статус: Не подключено")
         tab_search_layout.addWidget(self.status_label)
@@ -238,6 +244,7 @@ class OLTApp(QWidget):
         # Кнопка разлогинивания
         self.logout_btn = QPushButton("Разлогиниться (Exit)")
         self.logout_btn.clicked.connect(self.logout)
+        self.logout_btn.setEnabled(False)
         main_layout.addWidget(self.logout_btn)
 
         self.setLayout(main_layout)
@@ -280,7 +287,7 @@ class OLTApp(QWidget):
     def _set_command(self, command):
         """Устанавливает команду в поле ввода"""
         self.cmd_input.setText(command)
-        self.cmd_output.append(f"> {command}")  # Добавляем команду в историю
+        self.cmd_output.append(f"> {command}")
 
     def _set_ont_command(self, command_template):
         """Устанавливает команду для конкретного интерфейса ONT"""
@@ -290,13 +297,13 @@ class OLTApp(QWidget):
             self.cmd_output.append(f"> {command}")
         else:
             QMessageBox.warning(self, "Ошибка", 
-                               "Сначала найдите ONT во вкладке 'Поиск ONT', чтобы определить интерфейс")
+                                "Сначала найдите ONT во вкладке 'Поиск ONT', чтобы определить интерфейс")
 
     def set_fonts(self):
         """Устанавливает увеличенный шрифт для основных рабочих областей"""
         # Больший шрифт для областей вывода
         output_font = QFont()
-        output_font.setPointSize(12)  # Увеличенный размер
+        output_font.setPointSize(12)
         
         # Применяем к областям вывода
         self.search_output.setFont(output_font)
@@ -304,11 +311,14 @@ class OLTApp(QWidget):
         
         # Больший шрифт для поля ввода команд
         input_font = QFont()
-        input_font.setPointSize(11)  # Увеличенный размер для ввода
+        input_font.setPointSize(11)
         
         # Применяем к полям ввода
         self.cmd_input.setFont(input_font)
-        self.serial_input.setFont(input_font)  # Также для поля ввода серийника
+        self.serial_input.setFont(input_font)
+        self.ip_input.setFont(input_font)
+        self.username_input.setFont(input_font)
+        self.password_input.setFont(input_font)
         
         # Шрифт для кнопок быстрого доступа
         btn_font = QFont()
@@ -329,7 +339,22 @@ class OLTApp(QWidget):
             self.cmd_output.append(formatted)
 
     def connect_to_olt(self):
-        ip = self.ip_combo.currentText()
+        ip = self.ip_input.text().strip()
+        username = self.username_input.text().strip()
+        password = self.password_input.text().strip()
+        
+        if not ip:
+            QMessageBox.warning(self, "Ошибка", "Введите IP адрес OLT")
+            return
+        
+        if not username:
+            QMessageBox.warning(self, "Ошибка", "Введите логин")
+            return
+        
+        if not password:
+            QMessageBox.warning(self, "Ошибка", "Введите пароль")
+            return
+        
         self.current_ip = ip
         self.status_label.setText(f"Статус: Подключение к {ip}...")
         self.search_output.clear()
@@ -339,7 +364,7 @@ class OLTApp(QWidget):
         try:
             if self.ssh:
                 self.ssh.close()
-            self.ssh = SSHClient(ip)
+            self.ssh = SSHClient(ip, username=username, password=password)
             self.ssh.set_output_area(self.search_output)
             self._log_gui("Соединение установлено")
             self.status_label.setText(f"Статус: OK (Подключено к {ip})")
@@ -472,13 +497,13 @@ class OLTApp(QWidget):
             
             self.search_btn.setEnabled(False)
             self.execute_btn.setEnabled(False)
+            self.logout_btn.setEnabled(False)
             self.ssh = None
 
     def closeEvent(self, event):
         if self.ssh:
             self.ssh.close()
         event.accept()
-
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
